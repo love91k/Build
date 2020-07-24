@@ -1,0 +1,22 @@
+trigger: none
+pr: 
+  autoCancel: true
+  branches: 
+    include:
+    - master
+  paths:
+    include:
+    - "**/*.tf"
+
+pool:
+  vmImage: ubuntu-latest
+
+steps:
+- task: TerraformInstaller@0
+  displayName: Install Terraform
+  inputs:
+    terraformVersion: 0.12.20
+
+- powershell: |
+    terraform fmt --check --recursive
+  displayName: check terraform formatting

@@ -1,0 +1,46 @@
+parameters:
+  - name: Subscription
+    type: string
+    default: bi-dev
+    displayName: "Azure subscription service principal name"
+  - name: EnvironmentName
+    type: string
+    default: "dev"
+  - name: StateStorageAccount
+    type: string
+    default: bidevstatestorage
+  - name: AzureRegion
+    type: string
+    default: eastus
+
+trigger: none
+
+pool:
+  vmImage: ubuntu-latest
+
+variables:
+  TerraformDirectory: "$(Build.SourcesDirectory)/Build/Terraform/ps-regional-resources/"
+
+steps:
+  - pwsh: |
+      $config = @{
+        azure_region            = "ph"
+        deployment_data = @{
+          subscription_identifier = "ph"
+          deployed_by = "$(Build.QueuedById)"
+        }
+      }
+      $outPath = "$(TerraformDirectory)/vars.auto.tfvars.json"
+      Write-Host "Writing config to $outPath"
+      $configJson = $config | ConvertTo-Json
+      Write-Host $configJson
+      $configJson | Out-File -Encoding ASCII "$outPath"
+
+  - template: ../../templates/apply-terraform.yml
+    parameters:
+      Subscription: ${{ parameters.Subscription }}
+      StateStorageAccount: ${{ parameters.StateStorageAccount }}
+      StateName: regional-state-${{parameters.AzureRegion}}-${{ parameters.EnvironmentName }}
+      Directory: $(TerraformDirectory)
+      StateStorageResourceGroupName: DeploymentInfrastructure
+      Destroy: true

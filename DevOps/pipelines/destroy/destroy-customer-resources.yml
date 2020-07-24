@@ -1,0 +1,54 @@
+parameters:
+  - name: Subscription
+    type: string
+    default: bi-dev
+    displayName: "Azure subscription service principal name"
+  - name: EnvironmentName
+    type: string
+    default: "dev"
+  - name: StateStorageAccount
+    type: string
+    default: bidevstatestorage
+  - name: AzureRegion
+    type: string
+    default: eastus
+  - name: CustomerName
+    type: string
+  - name: DebugPostfix
+    type: string
+    default: "$null"
+
+trigger: none
+
+pool:
+  vmImage: ubuntu-latest
+
+variables:
+  TerraformDirectory: "$(Build.SourcesDirectory)/Build/Terraform/ps-customer-resources/"
+  StateName: "state-${{parameters.CustomerName}}-${{parameters.AzureRegion}}-${{ parameters.EnvironmentName }}"
+
+steps:
+  - pwsh: |
+      $config = @{
+        azure_region            = "${{parameters.AzureRegion}}"
+        customer_name           = "${{parameters.CustomerName}}"
+        debug_postfix           = ""
+        deployment_data = @{
+          subscription_identifier = "${{ parameters.EnvironmentName }}"
+          deployed_by             = "ph"
+        }
+      }
+      $outPath = "$(TerraformDirectory)/vars.auto.tfvars.json"
+      Write-Host "Writing config to $outPath"
+      $configJson = $config | ConvertTo-Json
+      Write-Host $configJson
+      $configJson | Out-File -Encoding ASCII "$outPath"
+
+  - template: ../../templates/apply-terraform.yml
+    parameters:
+      Subscription: ${{ parameters.Subscription }}
+      StateStorageAccount: ${{ parameters.StateStorageAccount }}
+      StateName: $(StateName)
+      Directory: $(TerraformDirectory)
+      StateStorageResourceGroupName: DeploymentInfrastructure
+      Destroy: true

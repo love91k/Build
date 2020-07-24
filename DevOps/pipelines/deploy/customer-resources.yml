@@ -1,0 +1,100 @@
+parameters:
+  - name: Subscription
+    type: string
+    default: bi-dev
+    displayName: "Azure subscription service principal name"
+  - name: EnvironmentName
+    type: string
+    default: "dev"
+  - name: StateStorageAccount
+    type: string
+    default: bidevstatestorage
+  - name: AzureRegion
+    type: string
+    default: eastus
+  - name: CustomerName
+    displayName: 'CustomerName (at most 9 characters)'
+    type: string
+  - name: DebugPostfix
+    type: string
+    default: "$null"
+  - name: VnetAddressSpace
+    type: string
+    displayName: 'VnetAddressSpace (format of 10.x.x.x/x)'
+
+trigger: none
+
+pool:
+  vmImage: windows-latest
+
+variables:
+  TerraformDirectory: "$(Build.SourcesDirectory)/Build/Terraform/ps-customer-resources/"
+  StateName: "state-${{parameters.CustomerName}}-${{parameters.AzureRegion}}-${{ parameters.EnvironmentName }}"
+
+steps:   
+  - pwsh: |
+      $config = @{
+        azure_region            = "${{parameters.AzureRegion}}"
+        customer_name           = "${{parameters.CustomerName}}"
+        debug_postfix           = "${{parameters.DebugPostfix}}"
+        vnet_address_space      = @("${{parameters.VnetAddressSpace}}")
+        deployment_data = @{
+          subscription_identifier = "${{parameters.EnvironmentName}}"
+          deployed_by             = "$(Build.QueuedById)"
+        }
+      }
+      $outPath = "$(TerraformDirectory)/vars.auto.tfvars.json"
+      Write-Host "Writing config to $outPath"
+      $configJson = $config | ConvertTo-Json
+      Write-Host $configJson
+      $configJson | Out-File -Encoding ASCII "$outPath"
+    displayName: "Write config"
+  - template: ../../templates/apply-terraform.yml
+    parameters:
+      Subscription: ${{ parameters.Subscription }}
+      StateStorageAccount: ${{ parameters.StateStorageAccount }}
+      StateName: $(StateName)
+      Directory: $(TerraformDirectory)
+      StateStorageResourceGroupName: DeploymentInfrastructure
+  - task: AzureKeyVault@1
+    displayName: Load sql admin details to restore bacpac and create sql user 
+    inputs:
+      azureSubscription: ${{parameters.Subscription}}
+      KeyVaultName: 'kv-ps-${{parameters.AzureRegion}}-${{parameters.EnvironmentName}}'
+      SecretsFilter: 'sqlAdminUser,sqlAdminPass'      
+  - task: AzureKeyVault@1
+    displayName: Load customer sql user details
+    inputs:
+      azureSubscription: ${{parameters.Subscription}}
+      KeyVaultName: 'kv-ps-${{parameters.CustomerName}}'
+      SecretsFilter: 'ps-sqluser-username,ps-sqluser-password'
+  - task: SqlAzureDacpacDeployment@1
+    displayName: 'create sql server login'
+    inputs: 
+      azureSubscription: ${{ parameters.Subscription }}
+      ServerName: 'sql-ps-${{parameters.AzureRegion }}-${{parameters.EnvironmentName}}.database.windows.net'
+      DatabaseName: 'master'
+      SqlUsername: $(sqlAdminUser)
+      SqlPassword: $(sqlAdminPass)
+      deployType : InlineSqlTask
+      sqlInline: "CREATE LOGIN [$(ps-sqluser-username)] WITH PASSWORD = '$(ps-sqluser-password)'"
+  - task: SqlAzureDacpacDeployment@1
+    displayName: create sql user in customer database
+    inputs: 
+        azureSubscription: ${{ parameters.Subscription }}
+        ServerName: 'sql-ps-${{parameters.AzureRegion }}-${{parameters.EnvironmentName}}.database.windows.net'
+        DatabaseName: 'sqldb-ps-${{parameters.CustomerName}}'
+        SqlUsername: $(sqlAdminUser)
+        SqlPassword: $(sqlAdminPass)
+        deployType : InlineSqlTask
+        sqlInline: "CREATE USER [$(ps-sqluser-username)] FROM LOGIN [$(ps-sqluser-username)]"
+  - task: SqlAzureDacpacDeployment@1
+    displayName: add user to sql low priv role beyondtrust_users
+    inputs: 
+        azureSubscription: ${{ parameters.Subscription }}
+        ServerName: 'sql-ps-${{parameters.AzureRegion }}-${{parameters.EnvironmentName}}.database.windows.net'
+        DatabaseName: 'sqldb-ps-${{parameters.CustomerName}}'
+        SqlUsername: $(sqlAdminUser)
+        SqlPassword: $(sqlAdminPass)
+        deployType : InlineSqlTask
+        sqlInline: "EXEC sp_addrolemember N'beyondtrust_users', N'$(ps-sqluser-username)'"

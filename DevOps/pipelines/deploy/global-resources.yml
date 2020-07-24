@@ -1,0 +1,81 @@
+parameters:
+  - name: AzureRegion
+    type: string
+    default: eastus
+  - name: Subscription
+    type: string
+    default: bi-dev
+    displayName: "Azure subscription service principal name"
+  - name: EnvironmentName
+    type: string
+    default: "dev"
+  - name: DNSName
+    type: string
+    default: "ps-dev.beyondtrustcloud.com"
+  - name: StateStorageAccount
+    type: string
+    default: bidevstatestorage
+  - name: CertKeyVault
+    type: string
+    default: cus-ps-dev-kv
+  - name: CertName
+    type: string
+    default: stardotpsdashdev
+  - name: Debug
+    type: boolean
+    default: true
+
+trigger: none
+
+pool:
+  vmImage: ubuntu-latest
+
+variables:
+  TerraformDirectory: "$(Build.SourcesDirectory)/Build/Terraform/ps-global-resources/"
+  CertFile: "$(TerraformDirectory)/ps-wildcard.pem"
+
+steps:
+  - task: AzureKeyVault@1
+    displayName: Load wildcard into environment
+    inputs:
+      azureSubscription: ${{parameters.Subscription}}
+      KeyVaultName: ${{ parameters.CertKeyVault }}
+      SecretsFilter: ${{ parameters.CertName }}
+
+  - pwsh: |
+      "$(stardotpsdashdev)" > '$(TerraformDirectory)/ps-wildcard.pem'
+    displayName: Download  wildcard
+
+  - pwsh: |
+      if ("${{parameters.Debug}}" -eq "true" )
+      {
+        $hash = "$(Build.SourceVersion)".Substring(0,8)
+      }
+
+      $config = @{
+        azure_region            = "${{ parameters.AzureRegion }}"
+        dns_name                = "${{ parameters.DNSName}}"
+        subscription_identifier = "${{ parameters.EnvironmentName }}"
+        certificate             = @{
+          path = "$(TerraformDirectory)/ps-wildcard.pem"
+          password = ""
+          size = 2048
+          type = "RSA"
+        } 
+        deployed_by = "$(Build.QueuedById)"
+        debug_postfix = "$hash"
+      }
+      $outPath = "$(TerraformDirectory)/vars.auto.tfvars.json"
+      Write-Host "Writing config to $outPath"
+      $configJson = $config | ConvertTo-Json
+      Write-Host $configJson
+      $configJson | Out-File -Encoding ASCII "$outPath"
+    displayName: Create config file
+
+  - template: ../../templates/apply-terraform.yml
+    parameters:
+      Subscription: ${{ parameters.Subscription }}
+      StateStorageAccount: ${{ parameters.StateStorageAccount }}
+      StateName: global-state-${{ parameters.EnvironmentName }}
+      Directory: $(TerraformDirectory)
+      StateStorageResourceGroupName: DeploymentInfrastructure

@@ -1,0 +1,72 @@
+parameters:
+  - name: Subscription
+    type: string
+    displayName: The name of the subscription service connection
+  - name: StateStorageAccount
+    type: string
+    displayName: The name of the storage account where state is stored
+  - name: StateName
+    type: string
+    displayName: The name of the key that will be used to locate your state
+  - name: Directory
+    type: string
+    displayName: Directory containing the terraform files you want to apply
+  - name: StateStorageResourceGroupName
+    type: string
+    displayName: Resource group containing the state storage
+  - name: Destroy
+    type: boolean
+    default: false
+    displayName: Should this destroy instead of apply?
+
+steps:
+  - task: TerraformInstaller@0
+    displayName: Install Terraform
+    inputs:
+      terraformVersion: 0.12.28
+
+  - task: TerraformTaskV1@0
+    displayName: Terraform init
+    inputs:
+      provider: azurerm
+      backendServiceArm: ${{ parameters.Subscription }}
+      environmentServiceNameAzureRM: ${{ parameters.Subscription }}
+      backendAzureRmStorageAccountName: ${{ parameters.StateStorageAccount }}
+      backendAzureRmContainerName: state-storage
+      backendAzureRmKey: ${{ parameters.StateName }}
+      backendAzureRmResourceGroupName: ${{ parameters.StateStorageResourceGroupName }}
+      workingDirectory: ${{ parameters.Directory }}
+      command: init
+
+  - task: TerraformTaskV1@0
+    displayName: Terraform plan
+    inputs:
+      provider: azurerm
+      backendServiceArm: ${{ parameters.Subscription }}
+      environmentServiceNameAzureRM: ${{ parameters.Subscription }}
+      backendAzureRmStorageAccountName: ${{ parameters.StateStorageAccount }}
+      backendAzureRmContainerName: state-storage
+      backendAzureRmKey: ${{ parameters.StateName }}
+      backendAzureRmResourceGroupName: ${{ parameters.StateStorageResourceGroupName }}
+      workingDirectory: ${{ parameters.Directory }}
+      ${{ if eq(parameters.Destroy,true) }}:
+        command: plan
+        commandOptions: -destroy -out=plan
+      ${{ if eq(parameters.Destroy,false) }}:
+        command: plan
+        commandOptions: -out=plan
+
+  - task: TerraformTaskV1@0
+    name: terraformApply
+    displayName: Terraform apply
+    inputs:
+      provider: azurerm
+      backendServiceArm: ${{ parameters.Subscription }}
+      environmentServiceNameAzureRM: ${{ parameters.Subscription }}
+      backendAzureRmStorageAccountName: ${{ parameters.StateStorageAccount }}
+      backendAzureRmContainerName: state-storage
+      backendAzureRmKey: ${{ parameters.StateName }}
+      backendAzureRmResourceGroupName: ${{ parameters.StateStorageResourceGroupName }}
+      workingDirectory: ${{ parameters.Directory }}
+      command: apply
+      commandOptions: plan

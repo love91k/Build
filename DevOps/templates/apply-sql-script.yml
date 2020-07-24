@@ -1,0 +1,21 @@
+parameters:
+  scripts: []
+  databaseName:
+  ServerName:
+  SqlUsername: 
+  SqlPassword:
+  RootFolder:
+  Subscription:
+
+steps:
+  - ${{ each script in parameters.scripts }}:
+    - task: SqlAzureDacpacDeployment@1
+      displayName: "Run ${{ script }}"
+      inputs: 
+        azureSubscription: ${{ parameters.Subscription }}
+        ServerName: ${{ parameters.ServerName }}
+        DatabaseName: ${{ parameters.databaseName }}
+        SqlUsername: ${{ parameters.SqlUserName }}
+        SqlPassword: ${{ parameters.SqlPassword }}
+        deployType: SqlTask
+        SqlFile: "${{ parameters.RootFolder }}/${{ script }}"

@@ -1,0 +1,51 @@
+trigger: none
+
+parameters:
+  - name: Subscription
+    type: string
+    default: bi-dev
+    displayName: "Azure subscription service principal name"
+  - name: EnvironmentName
+    type: string
+    default: "dev"
+  - name: StateStorageAccount
+    type: string
+    default: bidevstatestorage
+
+variables:
+  TerraformDirectory: "$(Build.SourcesDirectory)/Build/Terraform/ps-global-resources/"
+  CertFile: "$(TerraformDirectory)/ps-wildcard.pem"
+
+steps:
+  - pwsh: |
+      "DUMMY TEXT" > "$(CertFile)"
+    displayName: generate dummy cert file
+
+  - pwsh: |
+      $config = @{
+        azure_region            = "PLACEHOLDER"
+        dns_name                = "PLACEHOLDER"
+        subscription_identifier = "PLACEHOLDER"
+        certificate             = @{
+          path = "$(TerraformDirectory)/ps-wildcard.pem"
+          password = ""
+          size = 2048
+          type = "RSA"
+        } 
+        deployed_by = "DUMMY"
+      }
+      $outPath = "$(TerraformDirectory)/vars.auto.tfvars.json"
+      Write-Host "Writing config to $outPath"
+      $configJson = $config | ConvertTo-Json
+      Write-Host $configJson
+      $configJson | Out-File -Encoding ASCII "$outPath"
+    displayName: Create config file
+
+  - template: ../../templates/apply-terraform.yml
+    parameters:
+      Subscription: ${{ parameters.Subscription }}
+      StateStorageAccount: ${{ parameters.StateStorageAccount }}
+      StateName: global-state-${{ parameters.EnvironmentName }}
+      Directory: $(TerraformDirectory)
+      StateStorageResourceGroupName: DeploymentInfrastructure
+      Destroy: true

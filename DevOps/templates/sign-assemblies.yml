@@ -1,0 +1,12 @@
+parameters:
+  - name: fileNames
+    type: string
+  - name: displayName
+    type: string
+    default: Sign Assemblies
+steps:
+  - task: CmdLine@1
+    displayName: ${{ parameters.displayName }}
+    inputs:
+      filename: signtool
+      arguments: sign /v /debug /sm /fd SHA256 /t "http://timestamp.verisign.com/scripts/timestamp.dll" ${{ parameters.fileNames }}

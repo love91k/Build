@@ -1,0 +1,38 @@
+parameters:
+  - name: project
+    type: string
+  - name: configuration
+    type: string
+    default: Release
+  - name: version
+    type: string
+    default: none
+
+steps:
+  - ${{ if eq(parameters.version, 'none') }}:
+      - task: GitVersion@5
+        displayName: GitVersion
+        inputs:
+          runtime: core
+          updateAssemblyInfo: true
+  - task: DotNetCoreCLI@2
+    displayName: Restore Packages for ${{ parameters.project }}
+    inputs:
+      command: restore
+      feedRestore: e6c19700-8dbe-4589-bf76-496027512a93
+      projects: "${{ parameters.project }}"
+  - task: DotNetCoreCLI@2
+    displayName: Build project ${{ parameters.project }}
+    inputs:
+      command: build
+      projects: "${{ parameters.project }}"
+      ${{ if ne(parameters.version, 'none' )}}:
+        arguments: -c ${{ parameters.Configuration }} --no-restore /p:Version="${{ parameters.version }}"
+      ${{ if eq(parameters.version, 'none' )}}:
+        arguments: -c ${{ parameters.Configuration }} --no-restore /p:Version="$(GitVersion.AssemblySemVer)"
+  - task: DotNetCoreCLI@2
+    displayName: Run tests from ${{ parameters.project }}
+    inputs:
+      command: test
+      projects: "${{ parameters.project }}"
+      arguments: -c ${{ parameters.Configuration }} --no-build
